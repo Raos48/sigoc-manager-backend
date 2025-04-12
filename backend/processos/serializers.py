@@ -4,6 +4,7 @@ from .models import (
     GrupoAuditor, Auditor, Unidade, TipoProcesso, 
     Situacao, Categoria, Processo, TipoReuniao, Reuniao,Atribuicao
 )
+from .models import Demanda, TipoDemanda
 
 class GrupoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -51,4 +52,14 @@ class ProcessoSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Processo
+        fields = '__all__'
+
+class TipoDemandaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TipoDemanda
+        fields = '__all__'
+
+class DemandaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Demanda
         fields = '__all__'
