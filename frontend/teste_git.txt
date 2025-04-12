@@ -1,1 +1,1 @@
-desktop confirmação de puxada
+notebook => desktop frontend
