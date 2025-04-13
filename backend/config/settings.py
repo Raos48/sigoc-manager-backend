@@ -135,6 +135,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': [
+        #'rest_framework.permissions.AllowAny',
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
@@ -148,10 +149,47 @@ REST_FRAMEWORK = {
 
 
 # Configurações CORS
-CORS_ALLOW_ALL_ORIGINS = True  # Em produção, especifique as origens exatas
-if not DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = False
-    CORS_ALLOWED_ORIGINS = [
-        "https://seu-dominio-frontend.com",
-        "http://localhost:3000",  # Domínio de desenvolvimento do frontend
-    ]
+CORS_ALLOW_ALL_ORIGINS = False  # Desativado para maior segurança
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",  # Origem do seu frontend
+]
+CORS_ALLOW_CREDENTIALS = True  # Permite envio de cookies
+
+
+
+
+
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'AUTH_COOKIE': 'access_token',  # Nome do cookie para access token
+    'AUTH_COOKIE_REFRESH': 'refresh_token',  # Nome do cookie para refresh token
+    'AUTH_COOKIE_HTTP_ONLY': True,  # Impede acesso via JavaScript
+    'AUTH_COOKIE_SECURE': False,  # Mude para True em produção (HTTPS)
+    'AUTH_COOKIE_SAMESITE': 'Lax',  # Protege contra CSRF
+}
+
+
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+
+
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}
