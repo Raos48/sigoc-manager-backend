@@ -37,7 +37,7 @@ INSTALLED_APPS = [
     'corsheaders',
     
     # Apps do projeto
-    "processos",
+    "processo",
     "usuarios",
 ]
 
@@ -162,13 +162,11 @@ CORS_ALLOW_CREDENTIALS = True  # Permite envio de cookies
 
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
-    'AUTH_COOKIE': 'access_token',  # Nome do cookie para access token
-    'AUTH_COOKIE_REFRESH': 'refresh_token',  # Nome do cookie para refresh token
-    'AUTH_COOKIE_HTTP_ONLY': True,  # Impede acesso via JavaScript
-    'AUTH_COOKIE_SECURE': False,  # Mude para True em produção (HTTPS)
-    'AUTH_COOKIE_SAMESITE': 'Lax',  # Protege contra CSRF
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),  # Define o tempo de expiração do token de acesso
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=0), # Define o tempo de expiração do token de refresh para zero
+    'ROTATE_REFRESH_TOKENS': False,             # Não rotaciona tokens de refresh
+    'BLACKLIST_AFTER_ROTATION': False,          # Não usa blacklist para tokens de refresh
+    'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
 
