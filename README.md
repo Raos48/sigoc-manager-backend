@@ -8,5 +8,4 @@ Sistema desenvolvido para integrar processos de gestão de órgãos de controle.
 - `/frontend` - Interface Vite + React
 - `/docs` - Documentação do projeto
 "@ | Out-File -FilePath README.md -Encoding utf8
-
-teste
+ 
