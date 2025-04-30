@@ -90,6 +90,7 @@ class Processo(models.Model):
     resultado_pretendido = models.TextField('Resultado Pretendido', blank=True, null=True)
     area_demandada = models.ForeignKey('Unidade', on_delete=models.PROTECT, related_name='acoes', verbose_name='Área Demandada', null=True, blank=True)
     achados = models.TextField('Achados', blank=True, null=True)
+    solicitacao_prorrogacao = models.BooleanField('Solicitação de Prorrogação', default=False)
     pai = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='subprocessos')
 
     class Meta:
@@ -98,20 +99,95 @@ class Processo(models.Model):
         ordering = ['-data_criacao']
 
     def clean(self):
-        # Validações de formato dos números de processo apenas se orgao_demandante estiver preenchido
+
+        if self.tipo == 'processo' and self.pai is not None:
+            raise ValidationError({'pai': "Processos do tipo 'processo' não podem ter pai."})
+        
+        # --- [Processos filhos: regras especiais por tipo de pai] ---
+        if self.pai:
+            # Pai do tipo 'processo'
+            if self.pai.tipo == 'processo':
+                tipos_permitidos = ['demanda', 'acordao', 'relatorio_auditoria', 'recomendacao', 'determinacao', 'acao']
+                if self.tipo not in tipos_permitidos:
+                    raise ValidationError({'tipo': "Somente tipos permitidos podem ser filhos de 'processo'."})
+            # Pai do tipo 'acordao'
+            elif self.pai.tipo == 'acordao':
+                if self.tipo not in ['recomendacao', 'determinacao']:
+                    raise ValidationError({'tipo': "Filhos de acórdão só podem ser do tipo recomendação ou determinação."})
+            # Pai do tipo 'determinacao'
+            elif self.pai.tipo == 'determinacao':
+                if self.tipo != 'acao':
+                    raise ValidationError({'tipo': "Filhos de determinação só podem ser do tipo ação."})
+            # Outras combinações não são permitidas
+            else:
+                raise ValidationError({'pai': "Estrutura de pai/filho inválida para o tipo de processo pai informado."})
+            
+
+        if self.tipo == 'processo':
+            campos_obrigatorios = [
+                'tipo_processo', 'assunto', 'situacao', 'prioridade', 
+                'numero_sei', 'orgao_demandante', 'numero_processo_externo',
+                'ano_solicitacao'
+            ]
+            for campo in campos_obrigatorios:
+                valor = getattr(self, campo)
+                if valor in [None, '']:
+                    raise ValidationError({campo: "Campo obrigatório para processos do tipo 'processo'."})
+                
+
+
+        # Campos obrigatórios para Recomendação
+        if self.tipo == 'recomendacao':
+            campos = [
+                'assunto', 'situacao', 'prioridade', 'prazo_inicial',
+            ]
+            for campo in campos:
+                if not getattr(self, campo):
+                    raise ValidationError({campo: "Campo obrigatório para processos do tipo 'recomendação'."})
+            if not self.unidade_auditada.exists():
+                raise ValidationError({'unidade_auditada': "Ao menos uma unidade auditada é obrigatória."})
+            # Checagem do campo booleano de solicitação
+            if self.solicitacao_prorrogacao is None:
+                raise ValidationError({'solicitacao_prorrogacao': "Campo obrigatório para processos do tipo 'recomendação'."})
+            
+
+        # Campos obrigatórios para Determinação
+        if self.tipo == 'determinacao':
+            campos = [
+                'assunto', 'situacao', 'prioridade', 'prazo_inicial',
+            ]
+            for campo in campos:
+                if not getattr(self, campo):
+                    raise ValidationError({campo: "Campo obrigatório para processos do tipo 'determinação'."})
+            if not self.unidade_auditada.exists():
+                raise ValidationError({'unidade_auditada': "Ao menos uma unidade auditada é obrigatória."})
+            if self.solicitacao_prorrogacao is None:
+                raise ValidationError({'solicitacao_prorrogacao': "Campo obrigatório para processos do tipo 'determinação'."})
+            
+
+        # Campos obrigatórios para Ação
+        if self.tipo == 'acao':
+            campos = [
+                'assunto', 'situacao', 'prioridade', 'area_demandada',
+                'prazo_inicial', 'duracao_execucao', 'forma_execucao', 'resultado_pretendido',
+            ]
+            for campo in campos:
+                if not getattr(self, campo):
+                    raise ValidationError({campo: "Campo obrigatório para processos do tipo 'ação'."})
+
+        
         if self.orgao_demandante and self.numero_processo_externo:
             if self.orgao_demandante == 'TCU':
                 tcu_pattern = r'^\d{3}\.\d{3}\/\d{4}-\d{1}$'
                 if not re.match(tcu_pattern, self.numero_processo_externo):
-                    raise ValidationError({'numero_processo_externo': 'O formato para TCU deve ser: 044.967/2021-7'})
+                    raise ValidationError({'numero_processo_externo': 'O formato para TCU deve ser: XXX.XXX/XXXX-X'})
             elif self.orgao_demandante == 'CGU':
                 if not self.numero_processo_externo.isdigit() or len(self.numero_processo_externo) != 8:
-                    raise ValidationError({'numero_processo_externo': 'O formato para CGU deve ser: 8 dígitos (ex: 01229074)'})
+                    raise ValidationError({'numero_processo_externo': 'O formato para CGU deve ser: 8 dígitos (ex: XXXXXXXX)'})
             elif self.orgao_demandante == 'AUDGER':
                 if not self.numero_processo_externo.isdigit() or len(self.numero_processo_externo) != 7:
-                    raise ValidationError({'numero_processo_externo': 'O formato para AUDGER deve ser: 7 dígitos (ex: 1577597)'})
+                    raise ValidationError({'numero_processo_externo': 'O formato para AUDGER deve ser: 7 dígitos (ex: XXXXXXX)'})
         
-        # Validações de campos obrigatórios condicionais
         if self.reiterado == 'sim' and not self.data_reiteracao:
             raise ValidationError({'data_reiteracao': 'Data de reiteração é obrigatória quando demanda foi reiterada.'})
         
@@ -132,9 +208,9 @@ class Processo(models.Model):
                     raise ValidationError({'resultado_pretendido': 'Resultado pretendido é obrigatório para ações.'})
         
         # Validações de hierarquia de processos
-        if self.pai:
-            if self.pai.pai:
-                raise ValidationError("Um subprocesso deve ter apenas um pai (processo OU outro subprocesso, nunca ambos)")
+        # if self.pai:
+        #     if self.pai.pai:
+        #         raise ValidationError("Um subprocesso deve ter apenas um pai (processo OU outro subprocesso, nunca ambos)")
     
     def save(self, *args, **kwargs):
         if not self.identificador:

@@ -5,6 +5,7 @@ from .views import (
     AtribuicaoViewSet, GrupoAuditorViewSet, AuditorViewSet, UnidadeViewSet,
     TipoProcessoViewSet, SituacaoViewSet, CategoriaViewSet
 )
+from .views import get_subprocessos
 
 router = DefaultRouter()
 router.register(r'tipos-demanda', TipoDemandaViewSet)
@@ -21,4 +22,5 @@ router.register(r'categorias', CategoriaViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('processos/<int:pai_id>/subprocessos/', get_subprocessos, name='get_subprocessos'),
 ]
