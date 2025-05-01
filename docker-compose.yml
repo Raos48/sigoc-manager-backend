@@ -1,62 +1,65 @@
-   version: '3.8'
+version: '3.8'
+services:
+  # Serviço do backend
+  backend:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+      - sqlite_data:/app/db
+    environment:
+      - DEBUG=False  # Alterado para False em produção
+      - SECRET_KEY=django-insecure-c_lb86idpic!1xbj-@!5q@0-flaxu(qbr#2g2+x+f0!e=sojco  # Considere usar uma variável de ambiente
+      - ALLOWED_HOSTS=38.242.207.139,localhost,127.0.0.1,backend
+      - CSRF_TRUSTED_ORIGINS=http://38.242.207.139:8080,http://localhost:8080
+    restart: always
+    networks:
+      - sigoc_network
+    command: >
+      sh -c "chmod -R 777 /app/db &&
+            chmod -R 777 /app/staticfiles &&
+            chmod -R 777 /app/media &&
+            python manage.py collectstatic --noinput &&
+            python manage.py migrate &&
+            gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+    # A porta 8000 não é exposta publicamente, apenas na rede interna
+  
+  # Serviço do frontend
+  frontend:
+    build: ./frontend/sigoc
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - sigoc_network
+    # O frontend não expõe portas diretamente, o Nginx fará isso
+  
+  # Nginx para roteamento
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"  # Alterado de 80:80 para 8080:80 para evitar conflito
+      # - "443:443"  # Comentado até configurar SSL
+      # - "8000:8000"  # Removido para não expor o backend diretamente
+    volumes:
+      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf
+      - static_volume:/var/www/static
+      - media_volume:/var/www/media
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - backend
+      - frontend
+    restart: always
+    networks:
+      - sigoc_network
 
-   services:
-     # Serviço do backend
-     backend:
-       build: ./backend
-       volumes:
-         - ./backend:/app
-         - static_volume:/app/staticfiles
-         - media_volume:/app/media
-         - sqlite_data:/app/db
-       environment:
-         - DEBUG=True
-         - SECRET_KEY=django-insecure-c_lb86idpic!1xbj-@!5q@0-flaxu(qbr#2g2+x+f0!e=sojco
-         - ALLOWED_HOSTS=seu-dominio.com,backend,localhost
-       restart: always
-       networks:
-         - sigoc_network
-       command: >
-        sh -c "chmod -R 777 /app/db &&
-              chmod -R 777 /app/staticfiles &&
-              chmod -R 777 /app/media &&
-              python manage.py collectstatic --noinput &&
-              python manage.py migrate &&
-              gunicorn config.wsgi:application --bind 0.0.0.0:8000"
+volumes:
+  sqlite_data:
+  static_volume:
+  media_volume:
 
-     # Serviço do frontend
-     frontend:
-       build: ./frontend/sigoc
-       restart: always
-       depends_on:
-         - backend
-       networks:
-         - sigoc_network
-
-     # Nginx para roteamento
-     nginx:
-       image: nginx:alpine
-       ports:
-         - "80:80"
-         - "443:443"
-       volumes:
-         - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf
-         - static_volume:/var/www/static
-         - media_volume:/var/www/media
-         - ./certbot/conf:/etc/letsencrypt
-         - ./certbot/www:/var/www/certbot
-       depends_on:
-         - backend
-         - frontend
-       restart: always
-       networks:
-         - sigoc_network
-
-   volumes:
-     sqlite_data:
-     static_volume:
-     media_volume:
-
-   networks:
-     sigoc_network:
-       driver: bridge
+networks:
+  sigoc_network:
+    driver: bridge
