@@ -30,6 +30,8 @@ class TipoReuniao(models.Model):
     def __str__(self):
         return self.nome
 
+
+
 class Processo(models.Model):
     PRIORIDADE_CHOICES = [
         ('normal', 'Normal'),
@@ -55,7 +57,8 @@ class Processo(models.Model):
     ]
 
     tipo = models.CharField(max_length=30, choices=TIPO_CHOICES)
-    tipo_processo = models.ForeignKey('TipoProcesso', on_delete=models.PROTECT, related_name='processos', null=True, blank=True)    
+    tipo_processo = models.ForeignKey('TipoProcesso', on_delete=models.PROTECT, related_name='processos', null=True, blank=True)
+    categoria = models.ForeignKey('Categoria', on_delete=models.PROTECT, related_name='processos', null=True, blank=True)    
     identificador = models.CharField(max_length=10, unique=True, editable=False)
     assunto = models.CharField(max_length=200)
     situacao = models.ForeignKey('Situacao', on_delete=models.PROTECT, related_name='processos')
@@ -68,8 +71,7 @@ class Processo(models.Model):
     data_criacao = models.DateTimeField(auto_now_add=True)
     data_atualizacao = models.DateTimeField(auto_now=True)
     auditores_responsaveis = models.ManyToManyField('Auditor', related_name='processos_responsavel', blank=True)
-    unidade_auditada = models.ManyToManyField('Unidade', related_name='processos', blank=True, verbose_name='Unidades Auditadas')
-    categoria = models.ForeignKey('Categoria', on_delete=models.PROTECT, related_name='processos', null=True, blank=True)
+    unidade_auditada = models.ManyToManyField('Unidade', related_name='processos', blank=True, verbose_name='Unidades Auditadas')    
     correlacao_lar = models.BooleanField(default=False)
     tag = models.CharField(max_length=100, blank=True, null=True)
     descricao = models.TextField(max_length=200000, blank=True, null=True)
@@ -90,8 +92,9 @@ class Processo(models.Model):
     resultado_pretendido = models.TextField('Resultado Pretendido', blank=True, null=True)
     area_demandada = models.ForeignKey('Unidade', on_delete=models.PROTECT, related_name='acoes', verbose_name='Área Demandada', null=True, blank=True)
     achados = models.TextField('Achados', blank=True, null=True)
-    solicitacao_prorrogacao = models.BooleanField('Solicitação de Prorrogação', default=False)
+    solicitacao_prorrogacao = models.BooleanField('Solicitação de Prorrogação', default=False)    
     pai = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='subprocessos')
+
 
     class Meta:
         verbose_name = 'Processo'
@@ -99,6 +102,8 @@ class Processo(models.Model):
         ordering = ['-data_criacao']
 
     def clean(self):
+
+        is_new = self._state.adding  # type: ignore # Ignora verificação de tipo
 
         if self.tipo == 'processo' and self.pai is not None:
             raise ValidationError({'pai': "Processos do tipo 'processo' não podem ter pai."})
@@ -138,18 +143,16 @@ class Processo(models.Model):
 
         # Campos obrigatórios para Recomendação
         if self.tipo == 'recomendacao':
-            campos = [
-                'assunto', 'situacao', 'prioridade', 'prazo_inicial',
+            campos_obrigatorios = [
+                'assunto', 'situacao', 'prioridade', 'prazo_inicial'
             ]
-            for campo in campos:
+            for campo in campos_obrigatorios:
                 if not getattr(self, campo):
-                    raise ValidationError({campo: "Campo obrigatório para processos do tipo 'recomendação'."})
-            if not self.unidade_auditada.exists():
-                raise ValidationError({'unidade_auditada': "Ao menos uma unidade auditada é obrigatória."})
-            # Checagem do campo booleano de solicitação
-            if self.solicitacao_prorrogacao is None:
-                raise ValidationError({'solicitacao_prorrogacao': "Campo obrigatório para processos do tipo 'recomendação'."})
-            
+                    raise ValidationError({campo: "Campo obrigatório para recomendações"})
+
+            # Valida unidades auditadas apenas se já existir ID
+            if not is_new and not self.unidade_auditada.exists():
+                raise ValidationError({'unidade_auditada': "Selecione pelo menos uma unidade auditada"})
 
         # Campos obrigatórios para Determinação
         if self.tipo == 'determinacao':
@@ -216,7 +219,7 @@ class Processo(models.Model):
         if not self.identificador:
             unique_id = uuid.uuid4().hex
             hash_hex = hashlib.sha256(unique_id.encode()).hexdigest()
-            self.identificador = str(int(hash_hex, 16) % 10**12)
+            self.identificador = str(int(hash_hex, 16) % 10**10).zfill(10)
         self.clean()  # Todas as validações estão agora aqui
         super().save(*args, **kwargs)
     

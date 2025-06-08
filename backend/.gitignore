@@ -11,3 +11,4 @@ static/
 .env
 venv/
 env/
+.venv_desktop

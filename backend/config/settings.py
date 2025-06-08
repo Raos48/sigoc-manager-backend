@@ -7,8 +7,8 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-c_lb86idpic!1xbj-@!5q@0-flaxu(qbr#2g2+x+f0!e=sojco"
-DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1",'38.242.207.139','*').split(",")
+DEBUG = True
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "38.242.207.139", "*"]
 
 
 
@@ -158,8 +158,8 @@ REST_FRAMEWORK = {
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = os.environ.get(
-    "CORS_ALLOWED_ORIGINS", 
-    "http://localhost:3000,http://localhost:5173"
+    "CORS_ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://10.251.12.47:8080,http://127.0.0.1:5173,http://localhost:5173"
 ).split(",")
 
 
@@ -195,12 +195,8 @@ LOGGING = {
     },
 }
 
-# Configurações de segurança para produção
-if not DEBUG:
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SECURE = True
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 ano
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Independentemente do DEBUG
+SECURE_HSTS_SECONDS = 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+SECURE_HSTS_PRELOAD = False
+SECURE_SSL_REDIRECT = False
