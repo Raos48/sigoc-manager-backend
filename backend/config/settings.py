@@ -7,7 +7,7 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-c_lb86idpic!1xbj-@!5q@0-flaxu(qbr#2g2+x+f0!e=sojco"
-DEBUG = True
+DEBUG = False
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "38.242.207.139", "*", "sigoc.online","sigoc-sigoc.bpbeee.easypanel.host"]
 
 
@@ -177,6 +177,12 @@ SIMPLE_JWT = {
 CSRF_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = not DEBUG
+
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://sigoc.online",
+    "https://sigoc-sigoc.bpbeee.easypanel.host"
+]
 
 
 
