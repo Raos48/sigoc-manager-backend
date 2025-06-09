@@ -1,130 +1,137 @@
+# processo/admin.py
+
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
-    Processo, TipoDemanda, TipoReuniao, Atribuicao,
-    GrupoAuditor, Auditor, Unidade, TipoProcesso, Situacao, Categoria
+    # Modelos principais e de suporte
+    Processo, Auditor, GrupoAuditor, Categoria, Atribuicao, Unidade, TipoDemanda,
+    # Modelos de domínio (tabelas de opções)
+    Tipo, Prioridade, OrgaoDemandante, Situacao,
+    # Modelos de relação e submodelos
+    HierarquiaProcesso, Execucao, Resposta, HistoricoProcesso
 )
 
-class SubprocessoInline(admin.StackedInline):
+# --- Inlines (sem alterações) ---
+
+class ExecucaoInline(admin.StackedInline):
+    model = Execucao
+    can_delete = False
+    verbose_name_plural = 'Detalhes da Execução (para Ações)'
+    classes = ['collapse']
+
+class RespostaInline(admin.StackedInline):
+    model = Resposta
+    can_delete = False
+    verbose_name_plural = 'Detalhes da Resposta (Prazos e Prorrogação)'
+    classes = ['collapse']
+
+class SubprocessoInline(admin.TabularInline):
     model = Processo
     fk_name = 'pai'
     extra = 0
+    fields = ('numero', 'assunto', 'tipo', 'situacao')
+    readonly_fields = ('numero', 'assunto', 'tipo', 'situacao')
+    show_change_link = True
     verbose_name = "Subprocesso"
     verbose_name_plural = "Subprocessos"
-    show_change_link = True
-    readonly_fields = ('identificador',)
-    # Para evitar problemas de recursão em subprocessos não permitidos (ex: ação só pode ter pai do tipo determinação)
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        # Aqui, poderíamos filtrar por tipo, se desejado
-        return qs
+    def has_add_permission(self, request, obj=None):
+        return False
 
+class HistoricoProcessoInline(admin.TabularInline):
+    model = HistoricoProcesso
+    extra = 0
+    fields = ('data', 'alterado_por', 'tipo_alteracao', 'display_alteracoes')
+    readonly_fields = fields
+    can_delete = False
+    verbose_name = "Registro de Histórico"
+    verbose_name_plural = "Histórico de Alterações"
+    def has_add_permission(self, request, obj=None):
+        return False
+    def has_change_permission(self, request, obj=None):
+        return False
+
+# --- Customização Principal do Admin para o Modelo Processo (sem alterações) ---
+
+@admin.register(Processo)
 class ProcessoAdmin(admin.ModelAdmin):
     list_display = (
-        'identificador', 'assunto', 'tipo', 'tipo_processo',
-        'situacao', 'prioridade', 'get_pai', 'possui_subprocessos'
+        'numero', 'assunto', 'tipo', 'situacao', 'prioridade', 'get_pai_link'
     )
-    list_filter = (
-        'tipo', 'situacao', 'prioridade', 'orgao_demandante',
-        'ano_solicitacao', 'categoria'
-    )
-    search_fields = ('identificador', 'assunto', 'numero_sei', 'numero_processo_externo')
-    inlines = [SubprocessoInline]
-    readonly_fields = ('identificador',)
-
-    # Inclui o novo campo "solicitacao_prorrogacao"
+    list_filter = ('tipo', 'situacao', 'prioridade', 'orgao_demandante')
+    search_fields = ('numero', 'assunto', 'numero_processo_externo','documento_sei', 'numero_sei')
+    filter_horizontal = ('unidades_auditadas', 'auditores_responsaveis')
+    readonly_fields = ('numero', 'data_cadastro', 'data_atualizacao')
     fieldsets = (
-        ('Informações Básicas', {
+        ("1. Informações Centrais (Comum a Todos)", {
             'fields': (
-                ('identificador',), ('assunto',), ('tipo', 'tipo_processo'),
-                ('situacao', 'prioridade'), 'pai'
+                'numero', 'assunto', 'tipo', 'pai',
+                ('situacao', 'prioridade'),
+                'categoria', 'observacao'
             )
         }),
-        ('Detalhes do Processo', {
-            'fields': (
-                'orgao_demandante', 'numero_processo_externo',
-                'ano_solicitacao', 'categoria', 'atribuicao',
-                'numero_sei', 'descricao', 'tag'
-            )
-        }),
-        ('Responsáveis e Unidades', {
-            'fields': ('auditores_responsaveis', 'unidade_auditada')
-        }),
-        ('Datas e Prazos', {
-            'fields': (
-                'prazo', 'prazo_inicial', 'data_resposta',
-                'data_envio_resposta', 'data_reiteracao'
-            )
-        }),
-        ('Prazos e Solicitação de Prorrogação', {
-            'fields': ('solicitacao_prorrogacao',),  # <-- NOVO
-        }),
-        ('Informações Adicionais', {
+        ("2. Detalhes Específicos por Tipo (Recolhido)", {
             'classes': ('collapse',),
+            'description': "Preencha os campos abaixo de acordo com o 'Tipo' de processo selecionado.",
             'fields': (
-                'correlacao_lar', 'reiterado', 'observacao',
-                'achados', 'identificacao_achados'
+                ('orgao_demandante', 'numero_processo_externo'),
+                ('numero_sei','documento_sei', 'data_documento_sei'),
+                'ano_solicitacao', 'correlacao_lar', 'atribuicao',
+                'tipo_demanda', 'area_demandada', 'identificacao_achados', 'descricao'
             )
         }),
+        ("3. Envolvidos (Recolhido)", {
+            'classes': ('collapse',),
+            'fields': ('auditores_responsaveis', 'unidades_auditadas')
+        }),
+        ("4. Datas de Controle", {
+            'fields': ('data_cadastro', 'data_atualizacao')
+        })
     )
-
-    def get_pai(self, obj):
-        if obj.pai:
-            return format_html(
-                '<a href="{}">{} - {}</a>',
-                f"/admin/{obj._meta.app_label}/{obj._meta.model_name}/{obj.pai.id}/change/",
-                obj.pai.identificador,
-                obj.pai.assunto[:50] + ('...' if len(obj.pai.assunto) > 50 else '')
-            )
-        return "-"
-    get_pai.short_description = "Processo Pai"
-
-    def possui_subprocessos(self, obj):
-        count = obj.subprocessos.count()
-        if count > 0:
-            return format_html(
-                '<span style="color: green;">✓</span> ({} subprocesso{})'.format(
-                    count, 's' if count > 1 else ''
-                )
-            )
-        return format_html('<span style="color: red;">✗</span>')
-    possui_subprocessos.short_description = "Subprocessos"
+    inlines = [ExecucaoInline, RespostaInline, SubprocessoInline, HistoricoProcessoInline]
 
     def get_queryset(self, request):
-        queryset = super().get_queryset(request)
-        return queryset.select_related(
-            'tipo_processo', 'situacao', 'categoria', 'pai'
-        )
+        return super().get_queryset(request).select_related('tipo', 'situacao', 'prioridade', 'pai')
 
-    # Sugestão: Torna os campos obrigatórios mais fáceis de ver (apenas para o admin forms)
-    # Campos obrigatórios por tipo de processo, para ajudar o usuário/admin:
+    @admin.display(description='Processo Pai')
+    def get_pai_link(self, obj):
+        if obj.pai:
+            link = f"/admin/{obj._meta.app_label}/{obj._meta.model_name}/{obj.pai.id}/change/"
+            return format_html('<a href="{}">{}</a>', link, obj.pai)
+        return "-"
 
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
-        # Exemplo: campos obrigatórios geridos apenas visual/dinamicamente
-        from django import forms
-
-        tipo = (obj.tipo if obj else request.GET.get('tipo'))
-        if tipo in ['recomendacao', 'determinacao']:
-            form.base_fields['solicitacao_prorrogacao'].required = True
-            form.base_fields['prazo_inicial'].required = True
-            form.base_fields['unidade_auditada'].required = True
-        if tipo == 'acao':
-            form.base_fields['area_demandada'].required = True
-            form.base_fields['prazo_inicial'].required = True
-            form.base_fields['duracao_execucao'].required = True
-            form.base_fields['forma_execucao'].required = True
-            form.base_fields['resultado_pretendido'].required = True
-        return form
-
-# Registra os modelos no admin
-admin.site.register(Processo, ProcessoAdmin)
-admin.site.register(TipoDemanda)
-admin.site.register(TipoReuniao)
-admin.site.register(Atribuicao)
-admin.site.register(GrupoAuditor)
-admin.site.register(Auditor)
-admin.site.register(Unidade)
-admin.site.register(TipoProcesso)
+# --- Registro dos outros modelos no Admin (sem alterações) ---
+admin.site.register(Tipo)
+admin.site.register(Prioridade)
+admin.site.register(OrgaoDemandante)
 admin.site.register(Situacao)
+admin.site.register(Unidade)
+admin.site.register(Atribuicao)
 admin.site.register(Categoria)
+admin.site.register(TipoDemanda)
+admin.site.register(Auditor)
+admin.site.register(GrupoAuditor)
+admin.site.register(HierarquiaProcesso)
+
+
+# --- [CORRIGIDO] Registro do HistóricoAdmin ---
+@admin.register(HistoricoProcesso)
+class HistoricoProcessoAdmin(admin.ModelAdmin):
+    list_display = ('processo', 'data', 'tipo_alteracao', 'alterado_por')
+    list_filter = ('tipo_alteracao', 'data', 'alterado_por')
+    search_fields = ('processo__numero', 'processo__assunto')
+    readonly_fields = (
+        'processo', 'data', 'alterado_por', 'tipo_alteracao',
+        'display_alteracoes', 'observacao_geral',
+    )
+    fieldsets = (
+        (None, {'fields': ('processo', 'data', 'alterado_por', 'tipo_alteracao')}),
+        ('Detalhes da Alteração', {'fields': ('display_alteracoes', 'observacao_geral')}),
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+

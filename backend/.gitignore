@@ -5,10 +5,12 @@
 *.pyc
 __pycache__/
 local_settings.py
-#db.sqlite3
+db.sqlite3
 media/
 static/
 .env
 venv/
 env/
 .venv_desktop
+venv2
+.venv2

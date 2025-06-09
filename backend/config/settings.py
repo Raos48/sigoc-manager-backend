@@ -7,8 +7,8 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-c_lb86idpic!1xbj-@!5q@0-flaxu(qbr#2g2+x+f0!e=sojco"
-DEBUG = True
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "38.242.207.139", "*"]
+DEBUG = False
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "38.242.207.139", "*", "sigoc.online","sigoc-sigoc.bpbeee.easypanel.host"]
 
 
 
@@ -40,7 +40,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "django.middleware.locale.LocaleMiddleware",  # Middleware para internacionalização
+    "django.middleware.locale.LocaleMiddleware",
+    "processo.middleware.CurrentUserMiddleware", 
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -138,7 +139,7 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 50,
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
@@ -159,7 +160,7 @@ REST_FRAMEWORK = {
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://10.251.12.47:8080,http://127.0.0.1:5173,http://localhost:5173"
+    "http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://10.251.12.47:8080,http://127.0.0.1:5173,http://localhost:5173,https://sigoc.online,https://sigoc-sigoc.bpbeee.easypanel.host/"
 ).split(",")
 
 

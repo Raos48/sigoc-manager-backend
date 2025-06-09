@@ -1,129 +1,172 @@
-# seu_app/views.py (VERSÃO CORRIGIDA)
-
-from rest_framework import viewsets
-from django.db.models import Q
-from rest_framework.decorators import api_view, action
+from rest_framework import viewsets, filters, pagination, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
+
 from .models import (
-    TipoDemanda, TipoReuniao, Processo, Reuniao, Atribuicao,
-    GrupoAuditor, Auditor, Unidade, TipoProcesso, Situacao, Categoria
+    Processo, Tipo, Prioridade, OrgaoDemandante, Situacao, Categoria,
+    Atribuicao, Unidade, Auditor, GrupoAuditor, TipoDemanda
 )
 from .serializers import (
-    TipoDemandaSerializer, TipoReuniaoSerializer, ProcessoListSerializer, ProcessoCreateUpdateSerializer,
-    ReuniaoSerializer, AtribuicaoSerializer, GrupoAuditorSerializer,
-    AuditorSerializer, UnidadeSerializer, TipoProcessoSerializer,
-    SituacaoSerializer, CategoriaSerializer
+    ProcessoListSerializer, ProcessoCreateUpdateSerializer, ProcessoArvoreSerializer,
+    TipoSerializer, PrioridadeSerializer, OrgaoDemandanteSerializer, SituacaoSerializer,
+    CategoriaSerializer, AtribuicaoSerializer, UnidadeSerializer, AuditorSerializer,
+    GrupoAuditorSerializer, TipoDemandaSerializer 
 )
-from .serializers import ProcessoArvoreSerializer
-import logging
-from rest_framework.views import APIView
-from rest_framework import viewsets, pagination 
-from rest_framework import filters
-
-class StandardPagination(pagination.PageNumberPagination):
-    """
-    Classe de paginação padrão com um page_size configurável via query param.
-    """
-    page_size = 50
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 
-logger = logging.getLogger(__name__)
+
+class TipoViewSet(viewsets.ModelViewSet):
+    queryset = Tipo.objects.all()
+    serializer_class = TipoSerializer
+
+class PrioridadeViewSet(viewsets.ModelViewSet):
+    queryset = Prioridade.objects.all()
+    serializer_class = PrioridadeSerializer
+
+class OrgaoDemandanteViewSet(viewsets.ModelViewSet):
+    queryset = OrgaoDemandante.objects.all()
+    serializer_class = OrgaoDemandanteSerializer
+
+class SituacaoViewSet(viewsets.ModelViewSet):
+    queryset = Situacao.objects.all()
+    serializer_class = SituacaoSerializer
+
+class CategoriaViewSet(viewsets.ModelViewSet):
+    queryset = Categoria.objects.all()
+    serializer_class = CategoriaSerializer
+
+class AtribuicaoViewSet(viewsets.ModelViewSet):
+    queryset = Atribuicao.objects.all()
+    serializer_class = AtribuicaoSerializer
+    # --- INÍCIO DA MODIFICAÇÃO ---
+    pagination_class = None # Desativa a paginação para este ViewSet
+    filter_backends = [filters.SearchFilter] # Habilita a busca
+    search_fields = ['nome'] # Define o campo de busca
+    # --- FIM DA MODIFICAÇÃO ---
+
+class UnidadeViewSet(viewsets.ModelViewSet):
+    queryset = Unidade.objects.all()
+    serializer_class = UnidadeSerializer
+    # --- INÍCIO DA MODIFICAÇÃO ---
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['nome']
+
+
+class AuditorViewSet(viewsets.ModelViewSet):    
+    queryset = Auditor.objects.all()
+    serializer_class = AuditorSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['nome']
+
+class GrupoAuditorViewSet(viewsets.ModelViewSet):
+    queryset = GrupoAuditor.objects.all()
+    serializer_class = GrupoAuditorSerializer
 
 class TipoDemandaViewSet(viewsets.ModelViewSet):
-    # 👇 CORREÇÃO: Adicionada ordenação
-    queryset = TipoDemanda.objects.all().order_by('nome')
+    queryset = TipoDemanda.objects.all()
     serializer_class = TipoDemandaSerializer
 
-class TipoReuniaoViewSet(viewsets.ModelViewSet):
-    # 👇 CORREÇÃO: Adicionada ordenação
-    queryset = TipoReuniao.objects.all().order_by('nome')
-    serializer_class = TipoReuniaoSerializer
+
+# --- ViewSet principal para Processos ---
 
 class ProcessoViewSet(viewsets.ModelViewSet):
-    # O modelo 'Processo' já tem uma ordenação padrão, então está OK.
-    queryset = Processo.objects.all().prefetch_related('unidade_auditada', 'auditores_responsaveis') 
-    lookup_field = 'identificador'
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['identificador', 'assunto', 'numero_sei', 'numero_processo_externo']
+    """
+    ViewSet para gerenciar Processos.
+    Usa serializers diferentes para leitura e escrita.
+    """
+    # Usamos 'select_related' para otimizar queries de ForeignKey (1-para-1)
+    # e 'prefetch_related' para ManyToMany e OneToMany reversos.
+    queryset = Processo.objects.select_related(
+        'tipo', 'situacao', 'prioridade', 'categoria', 'orgao_demandante',
+        'atribuicao', 'area_demandada', 'pai', 'execucao', 'resposta'
+    ).prefetch_related(
+        'unidades_auditadas', 'auditores_responsaveis', 'historicos', 'filhos'
+    ).all()
+
+    # O campo para buscar um processo específico (ex: /api/processos/12345/)
+    lookup_field = 'numero'
+    
+    # Habilita filtros de busca, como /api/processos/?search=auditoria
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['numero', 'assunto', 'numero_processo_externo', 'numero_sei', 'descricao']
+    ordering_fields = ['data_cadastro', 'prioridade__nome'] # Permite ordenar por data ou nome da prioridade
 
     def get_serializer_class(self):
+        """
+        Retorna o serializer apropriado dependendo da ação (leitura ou escrita).
+        """
         if self.action in ['create', 'update', 'partial_update']:
             return ProcessoCreateUpdateSerializer
+        # Para 'list', 'retrieve' e ações customizadas, usa o serializer de leitura.
         return ProcessoListSerializer
 
     @action(detail=True, methods=['get'], url_path='arvore')
-    def arvore(self, request, pk=None):
+    def get_processo_arvore(self, request, numero=None):
+        """
+        Endpoint customizado para retornar um processo e todos os seus descendentes.
+        Acessível em /api/processos/{numero}/arvore/
+        """
         processo = self.get_object()
         serializer = ProcessoArvoreSerializer(processo, context={'request': request})
         return Response(serializer.data)
 
+
 class DashboardStatsView(APIView):
+    """
+    Endpoint para fornecer estatísticas para o dashboard.
+    """
     def get(self, request, *args, **kwargs):
+        # A lógica é a mesma, mas agora filtramos pelo nome na tabela relacionada.
         total = Processo.objects.count()
-        ativos = Processo.objects.filter(situacao__nome='Em andamento').count()
-        pendentes = Processo.objects.filter(situacao__nome='Pendente').count()
-        finalizados = Processo.objects.filter(situacao__nome='Finalizado').count()
+        # Garanta que você tenha Situações com estes nomes no seu banco de dados.
+        em_andamento = Processo.objects.filter(situacao__nome__iexact='Em andamento').count()
+        pendente = Processo.objects.filter(situacao__nome__iexact='Pendente').count()
+        finalizado = Processo.objects.filter(situacao__nome__iexact='Finalizado').count()
         
         data = {
             'totalProcessos': total,
-            'processosAtivos': ativos,
-            'processosPendentes': pendentes,
-            'processosFinalizados': finalizados,
+            'processosEmAndamento': em_andamento,
+            'processosPendentes': pendente,
+            'processosFinalizados': finalizado,
         }
         return Response(data)
 
-class ReuniaoViewSet(viewsets.ModelViewSet):
-    # O modelo 'Reuniao' já tem ordenação, está OK.
-    queryset = Reuniao.objects.all()
-    serializer_class = ReuniaoSerializer
 
-class AtribuicaoViewSet(viewsets.ModelViewSet):
-    # O modelo 'Atribuicao' já tem ordenação, está OK.
-    queryset = Atribuicao.objects.all()
-    serializer_class = AtribuicaoSerializer
-    pagination_class = StandardPagination 
 
-class GrupoAuditorViewSet(viewsets.ModelViewSet):
-    # 👇 CORREÇÃO: Adicionada ordenação
-    queryset = GrupoAuditor.objects.all().order_by('nome')
-    serializer_class = GrupoAuditorSerializer
+# ... outras views ...
 
-class AuditorViewSet(viewsets.ModelViewSet):
-    # O modelo 'Auditor' já tem ordenação, está OK.
-    queryset = Auditor.objects.all()
-    serializer_class = AuditorSerializer
-    pagination_class = StandardPagination
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['nome']
+class UnidadesByIdsView(APIView):
+    """
+    Endpoint para buscar múltiplas unidades a partir de uma lista de IDs.
+    Exemplo de uso: /api/unidades/by_ids/?ids=1,5,23
+    """
+    def get(self, request, *args, **kwargs):
+        ids_str = request.query_params.get('ids', '')
+        if not ids_str:
+            return Response([], status=status.HTTP_200_OK)
+        try:
+            ids = [int(id_str) for id_str in ids_str.split(',')]
+        except (ValueError, TypeError):
+            return Response(
+                {"error": "Os IDs devem ser uma lista de números inteiros separados por vírgula."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        queryset = Unidade.objects.filter(id__in=ids)
+        serializer = UnidadeSerializer(queryset, many=True)
+        return Response(serializer.data)
 
-class UnidadeViewSet(viewsets.ModelViewSet):
-    # O modelo 'Unidade' já tem ordenação, está OK.
-    queryset = Unidade.objects.all()
-    serializer_class = UnidadeSerializer
-    pagination_class = StandardPagination
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['nome']
 
-class TipoProcessoViewSet(viewsets.ModelViewSet):
-    # 👇 CORREÇÃO: Adicionada ordenação (conforme o log de erro)
-    queryset = TipoProcesso.objects.all().order_by('nome')
-    serializer_class = TipoProcessoSerializer
+class AuditoresByIdsView(APIView):
+    def get(self, request, *args, **kwargs):
+        ids_str = request.query_params.get('ids', '')
+        if not ids_str:
+            return Response([], status=status.HTTP_200_OK)
+        try:
+            ids = [int(id_str) for id_str in ids_str.split(',')]
+        except (ValueError, TypeError):
+            return Response({"error": "IDs inválidos."}, status=status.HTTP_400_BAD_REQUEST)
 
-class SituacaoViewSet(viewsets.ModelViewSet):
-    # 👇 CORREÇÃO: Adicionada ordenação (conforme o log de erro)
-    queryset = Situacao.objects.all().order_by('nome')
-    serializer_class = SituacaoSerializer
-
-class CategoriaViewSet(viewsets.ModelViewSet):
-    # O modelo 'Categoria' já tem ordenação, está OK.
-    queryset = Categoria.objects.all()
-    serializer_class = CategoriaSerializer
-
-@api_view(['GET'])
-def get_subprocessos(request, pai_id):
-    # 👇 CORREÇÃO: Adicionada ordenação também aqui
-    subprocessos = Processo.objects.filter(pai_id=pai_id).order_by('data_criacao')
-    serializer = ProcessoListSerializer(subprocessos, many=True) 
-    return Response(serializer.data)
+        queryset = Auditor.objects.filter(id__in=ids)
+        serializer = AuditorSerializer(queryset, many=True)
+        return Response(serializer.data)    

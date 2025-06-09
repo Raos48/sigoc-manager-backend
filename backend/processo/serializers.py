@@ -1,209 +1,214 @@
-# seu_app/serializers.py
-
 from rest_framework import serializers
 from .models import (
-    TipoDemanda, TipoReuniao, Processo, Reuniao, Atribuicao, 
-    GrupoAuditor, Auditor, Unidade, TipoProcesso, Situacao, Categoria
+    Processo, Execucao, Resposta, HistoricoProcesso,
+    Tipo, Prioridade, OrgaoDemandante, Situacao, Categoria, Atribuicao,
+    Unidade, Auditor, GrupoAuditor, TipoDemanda
 )
-import re
-from django.core.exceptions import ValidationError
 
 
-# ... (Nenhuma alteração nos serializers: TipoDemanda, TipoReuniao, Atribuicao, etc.)
-class TipoDemandaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TipoDemanda
-        fields = '__all__'
 
 
-class TipoReuniaoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TipoReuniao
-        fields = '__all__'
-
-
-class AtribuicaoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Atribuicao
-        fields = '__all__'
-
-
-class GrupoAuditorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = GrupoAuditor
-        fields = '__all__'
-
-
-class AuditorSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Auditor
-        fields = '__all__'
-
-
-class UnidadeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Unidade
-        fields = '__all__'
-
-
-class TipoProcessoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = TipoProcesso
-        fields = '__all__'
-
-
-class SituacaoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Situacao
-        fields = '__all__'
-
-
-class CategoriaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Categoria
-        fields = '__all__'
-
-# --- ALTERAÇÃO PRINCIPAL AQUI ---
-class ProcessoListSerializer(serializers.ModelSerializer):
-    """Serializer para listagem e detalhe de processos"""
-    tipo_processo = TipoProcessoSerializer(read_only=True)
-    situacao = SituacaoSerializer(read_only=True)
-    atribuicao = AtribuicaoSerializer(read_only=True)
-    categoria = CategoriaSerializer(read_only=True)
-    area_demandada = UnidadeSerializer(read_only=True)
-    
-    # 👇 ADICIONE ESTAS DUAS LINHAS PARA INCLUIR OS DETALHES COMPLETOS
-    unidade_auditada = UnidadeSerializer(many=True, read_only=True)
-    auditores_responsaveis = AuditorSerializer(many=True, read_only=True)
-    
-    class Meta:
-        model = Processo
-        fields = '__all__'
-
-
-# --- NENHUMA ALTERAÇÃO NECESSÁRIA ABAIXO ---
-class ProcessoCreateUpdateSerializer(serializers.ModelSerializer):
-    """Serializer para criação e atualização de processos (VERSÃO FINAL CORRIGIDA)"""
-    unidade_auditada = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=Unidade.objects.all(),
-        required=False
-    )
-    auditores_responsaveis = serializers.PrimaryKeyRelatedField(
-        many=True,
-        queryset=Auditor.objects.all(),
-        required=False
-    )
-    atribuicao = serializers.PrimaryKeyRelatedField(
-        queryset=Atribuicao.objects.all(),
-        required=False,
-        allow_null=True
-    )
+# ==========================================================
+# 1. DEFINA O SERIALIZER DE RESUMO PRIMEIRO
+#    Ele não depende de nenhum outro serializer de processo.
+# ==========================================================
+class ProcessoSummarySerializer(serializers.ModelSerializer):
+    """Serializer resumido para representar processos em listas (pai/filho)."""
+    tipo = serializers.StringRelatedField(read_only=True)
+    situacao = serializers.StringRelatedField(read_only=True)
+    prioridade = serializers.StringRelatedField(read_only=True)
 
     class Meta:
         model = Processo
         fields = [
-            'id', 'unidade_auditada', 'atribuicao', 'tipo', 'identificador', 
-            'assunto', 'prioridade', 'numero_sei', 'orgao_demandante', 
-            'numero_processo_externo', 'ano_solicitacao', 'data_criacao', 
-            'data_atualizacao', 'correlacao_lar', 'observacao', 'prazo', 
-            'tipo_processo', 'categoria', 'situacao', 'auditores_responsaveis'
+            'id', 'numero', 'assunto', 'tipo',
+            'situacao', 'prioridade', 'data_cadastro', 'data_atualizacao'
         ]
-        read_only_fields = ('identificador', 'data_criacao', 'data_atualizacao')
-
-    def validate(self, data):
-        """
-        Executa as validações do modelo (.clean()) de forma segura,
-        separando os campos ManyToMany antes de instanciar o modelo para validação.
-        """
-        # 1. Separa os dados de campos ManyToMany dos dados de campos normais.
-        m2m_fields = ['unidade_auditada', 'auditores_responsaveis']
-        model_data = {k: v for k, v in data.items() if k not in m2m_fields}
-
-        # 2. Cria uma instância temporária do modelo APENAS com os campos normais.
-        #    Isso evita o erro de atribuição direta a campos ManyToMany.
-        if self.instance:
-            # Se for uma atualização, usamos a instância existente como base
-            instance_for_validation = self.instance
-            for key, value in model_data.items():
-                setattr(instance_for_validation, key, value)
-        else:
-            # Se for uma criação, criamos uma nova instância em memória
-            instance_for_validation = Processo(**model_data)
-
-        # 3. Agora podemos chamar .clean() com segurança na instância temporária.
-        try:
-            # Usamos full_clean() que também chama validate_unique()
-            instance_for_validation.full_clean(exclude=m2m_fields)
-        except ValidationError as e:
-            # Capturamos o erro do modelo e o levantamos como um erro do DRF.
-            raise serializers.ValidationError(e.message_dict)
-
-        # 4. Retornamos os dados originais completos para os métodos create/update.
-        return data
-
-    def create(self, validated_data):
-        unidades = validated_data.pop('unidade_auditada', [])
-        auditores = validated_data.pop('auditores_responsaveis', [])
-        
-        instance = Processo.objects.create(**validated_data)
-        
-        if unidades:
-            instance.unidade_auditada.set(unidades)
-        if auditores:
-            instance.auditores_responsaveis.set(auditores)
-            
-        return instance
-
-    def update(self, instance, validated_data):
-        unidades = validated_data.pop('unidade_auditada', None)
-        auditores = validated_data.pop('auditores_responsaveis', None)
-        
-        instance = super().update(instance, validated_data)
-        
-        if unidades is not None:
-            instance.unidade_auditada.set(unidades)
-        if auditores is not None:
-            instance.auditores_responsaveis.set(auditores)
-            
-        return instance
+        read_only_fields = fields
 
 
-class ReuniaoSerializer(serializers.ModelSerializer):
-    processo = ProcessoListSerializer(read_only=True)
-    tipo = TipoReuniaoSerializer(read_only=True)
+# --- Serializers para Modelos de Suporte e Domínio ---
+# Estes estão corretos e não precisam de alteração.
+class TipoSerializer(serializers.ModelSerializer):
+    class Meta: model = Tipo; fields = '__all__'
 
+class PrioridadeSerializer(serializers.ModelSerializer):
+    class Meta: model = Prioridade; fields = '__all__'
 
+class OrgaoDemandanteSerializer(serializers.ModelSerializer):
+    class Meta: model = OrgaoDemandante; fields = '__all__'
+
+class SituacaoSerializer(serializers.ModelSerializer):
+    class Meta: model = Situacao; fields = '__all__'
+
+class CategoriaSerializer(serializers.ModelSerializer):
+    class Meta: model = Categoria; fields = '__all__'
+
+class AtribuicaoSerializer(serializers.ModelSerializer):
+    class Meta: model = Atribuicao; fields = '__all__'
+
+class UnidadeSerializer(serializers.ModelSerializer):
+    class Meta: model = Unidade; fields = '__all__'
+
+class AuditorSerializer(serializers.ModelSerializer):
+    class Meta: model = Auditor; fields = '__all__'
+
+class GrupoAuditorSerializer(serializers.ModelSerializer):
+    class Meta: model = GrupoAuditor; fields = '__all__'
+
+class TipoDemandaSerializer(serializers.ModelSerializer):
+    class Meta: model = TipoDemanda; fields = '__all__'
+
+# --- Serializers para Submodelos (Dados Aninhados) ---
+
+class ExecucaoSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Reuniao
-        fields = '__all__'
+        model = Execucao
+        # [CORRETO] Excluir 'processo' é a abordagem certa para criação aninhada.
+        exclude = ['processo']
 
+class RespostaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resposta
+        # [CORRIGIDO] O problema principal estava aqui. Ao invés de 'fields = __all__',
+        # excluímos explicitamente o campo 'processo'. Isso impede o serializer
+        # de exigi-lo, pois ele será fornecido manualmente no método '.create()' do pai.
+        exclude = ['processo']
 
-class ProcessoArvoreSerializer(serializers.ModelSerializer):
-    tipo_demanda = TipoDemandaSerializer(read_only=True)
-    tipo_processo = TipoProcessoSerializer(read_only=True)
-    situacao = SituacaoSerializer(read_only=True)
-    atribuicao = AtribuicaoSerializer(read_only=True)
+class HistoricoProcessoSerializer(serializers.ModelSerializer):
+    alterado_por = serializers.StringRelatedField()
+    class Meta:
+        model = HistoricoProcesso
+        fields = ['data', 'alterado_por', 'tipo_alteracao', 'alteracoes', 'observacao_geral']
+
+class ProcessoPaiSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Processo
+        fields = ['id', 'numero', 'assunto', 'tipo']
+
+# --- Serializers para o Modelo Principal: Processo ---
+
+class ProcessoListSerializer(serializers.ModelSerializer):
+    """
+    Serializer para LEITURA (GET). Mostra os dados de forma aninhada e legível.
+    """
+    tipo = serializers.StringRelatedField()
+    situacao = serializers.StringRelatedField()
+    prioridade = serializers.StringRelatedField()
+    categoria = serializers.StringRelatedField()
+    orgao_demandante = serializers.StringRelatedField()
+    atribuicao = serializers.StringRelatedField()
+    area_demandada = serializers.StringRelatedField()
+    
+    # --- INÍCIO DA ALTERAÇÃO ---
+    # DE: pai = serializers.StringRelatedField()
+    # PARA: Usar nosso novo serializer de resumo para o processo pai.
+    pai = ProcessoSummarySerializer(read_only=True)
+    # --- FIM DA ALTERAÇÃO ---
+
+    unidades_auditadas = UnidadeSerializer(many=True, read_only=True)
     auditores_responsaveis = AuditorSerializer(many=True, read_only=True)
-    unidade_auditada = UnidadeSerializer(many=True, read_only=True)
-    categoria = CategoriaSerializer(read_only=True)
-    area_demandada = UnidadeSerializer(read_only=True)
-    pai = serializers.PrimaryKeyRelatedField(queryset=Processo.objects.all(), allow_null=True, required=False)
-    subprocessos = serializers.SerializerMethodField()
-
+    filhos = serializers.SerializerMethodField()
+    execucao = ExecucaoSerializer(read_only=True)
+    resposta = RespostaSerializer(read_only=True)
+    historicos = HistoricoProcessoSerializer(many=True, read_only=True)
+    situacoes_disponiveis = serializers.SerializerMethodField()
 
     class Meta:
         model = Processo
-        fields = (
-            'id', 'tipo', 'tipo_demanda', 'tipo_processo', 'identificador', 'assunto',
-            'situacao', 'prioridade', 'atribuicao', 'numero_sei', 'orgao_demandante',
-            'numero_processo_externo', 'ano_solicitacao', 'data_criacao', 'data_atualizacao',
-            'auditores_responsaveis', 'unidade_auditada', 'categoria', 'correlacao_lar', 'tag',
-            'descricao', 'observacao', 'prazo', 'data_resposta', 'numero_sei_resposta', 'data_envio_resposta',
-            'reiterado', 'data_reiteracao', 'identificacao_achados', 'documento_resposta', 'prazo_inicial', 'local_execucao', 'duracao_execucao',
-            'forma_execucao', 'resultado_pretendido', 'area_demandada', 'achados', 'pai', 'subprocessos'
-        )
+        fields = '__all__'
+
+    def get_filhos(self, obj):
+        # Otimização: Apenas mostra filhos na visualização de detalhe (retrieve)
+        # e usa o serializer de resumo para evitar carga excessiva.
+        if self.context.get('view') and self.context['view'].action == 'retrieve':
+            # --- INÍCIO DA ALTERAÇÃO ---
+            # DE: return ProcessoListSerializer(obj.filhos.all(), many=True, context=self.context).data
+            # PARA: Usar o serializer de resumo para os filhos. É mais leve e eficiente.
+            return ProcessoSummarySerializer(obj.filhos.all(), many=True).data
+            # --- FIM DA ALTERAÇÃO ---
+        return []
+
+    def get_situacoes_disponiveis(self, obj):
+        # ... (sem alteração aqui)
+        situacao_atual = obj.situacao.nome.lower()
+        if 'finalizado' not in situacao_atual and 'concluído' not in situacao_atual:
+            queryset = Situacao.objects.filter(nome__in=['Finalizado', 'Suspenso'])
+            return SituacaoSerializer(queryset, many=True).data
+        return []
 
 
-    def get_subprocessos(self, obj):
-        return ProcessoArvoreSerializer(obj.subprocessos.all(), many=True, context=self.context).data
+class ProcessoCreateUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para ESCRITA (POST, PATCH). Lida com a criação/atualização de submodelos.
+    """
+    execucao = ExecucaoSerializer(required=False, allow_null=True)
+    resposta = RespostaSerializer(required=False, allow_null=True)
+
+    class Meta:
+        model = Processo
+        # [CORRIGIDO] Removi o campo 'id' da lista, pois ele não deve ser escrito diretamente.
+        fields = [
+            'assunto', 'tipo', 'situacao', 'prioridade', 'categoria', 'pai',
+            'descricao', 'observacao', 'orgao_demandante', 'numero_processo_externo',
+            'ano_solicitacao', 'numero_sei', 'correlacao_lar', 'atribuicao',
+            'tipo_demanda', 'area_demandada', 'unidades_auditadas', 'auditores_responsaveis', 'documento_sei',
+            'data_documento_sei', 'identificacao_achados', 'execucao', 'resposta'
+        ]
+
+    def create(self, validated_data):
+        # 1. Separar dados aninhados e ManyToMany.
+        execucao_data = validated_data.pop('execucao', None)
+        resposta_data = validated_data.pop('resposta', None)
+        unidades_data = validated_data.pop('unidades_auditadas', [])
+        auditores_data = validated_data.pop('auditores_responsaveis', [])
+
+        # 2. Criar o objeto Processo principal.
+        processo = Processo.objects.create(**validated_data)
+
+        # 3. Lidar com relacionamentos ManyToMany.
+        processo.unidades_auditadas.set(unidades_data)
+        processo.auditores_responsaveis.set(auditores_data)
+
+        # 4. Criar submodelos, ligando-os ao processo recém-criado.
+        if execucao_data:
+            Execucao.objects.create(processo=processo, **execucao_data)
+        if resposta_data:
+            Resposta.objects.create(processo=processo, **resposta_data)
+
+        return processo
+
+    def update(self, instance, validated_data):
+        # Lógica de atualização para submodelos.
+        execucao_data = validated_data.pop('execucao', None)
+        resposta_data = validated_data.pop('resposta', None)
+
+        if resposta_data:
+            resposta_instance, _ = Resposta.objects.get_or_create(processo=instance)
+            for attr, value in resposta_data.items():
+                setattr(resposta_instance, attr, value)
+            resposta_instance.save()
+
+        if execucao_data:
+            execucao_instance, _ = Execucao.objects.get_or_create(processo=instance)
+            for attr, value in execucao_data.items():
+                setattr(execucao_instance, attr, value)
+            execucao_instance.save()
+        
+        # Chama o método 'update' pai para salvar os campos do Processo.
+        return super().update(instance, validated_data)
+
+
+class ProcessoArvoreSerializer(serializers.ModelSerializer):
+    filhos = serializers.SerializerMethodField()
+    tipo = serializers.StringRelatedField()
+
+    class Meta:
+        model = Processo
+        fields = ['id', 'numero', 'assunto', 'tipo', 'pai', 'filhos']
+
+    def get_filhos(self, obj):
+        return ProcessoArvoreSerializer(obj.filhos.all(), many=True, context=self.context).data
+    
+
+
