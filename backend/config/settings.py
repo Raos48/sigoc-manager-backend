@@ -155,15 +155,21 @@ REST_FRAMEWORK = {
 #     "http://localhost:5173",  # Origem do seu frontend
 # ]
 
+
+
+# =================== CONFIGURAÇÕES CORS CORRIGIDAS ===================
 CORS_ALLOW_CREDENTIALS = True  # Permite envio de cookies
 
-
-CORS_ALLOW_ALL_ORIGINS = False
-CORS_ALLOWED_ORIGINS = os.environ.get(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:8080,http://127.0.0.1:8080,http://10.251.12.47:8080,http://127.0.0.1:5173,http://localhost:5173,https://sigoc.online,https://sigoc-sigoc.bpbeee.easypanel.host/,'https://sigoc-sigoc-frontend.bpbeee.easypanel.host'"
-).split(",")
-
+# Substitua a sua configuração antiga por esta lista simples e correta.
+CORS_ALLOWED_ORIGINS = [
+    "https://sigoc-sigoc-frontend.bpbeee.easypanel.host", # URL do Frontend
+    "https://sigoc-sigoc.bpbeee.easypanel.host",        # URL do Backend (útil para o admin)
+    "https://sigoc.online",
+    "http://localhost:5173",  # Para desenvolvimento local do frontend
+    "http://localhost:3000",
+    "http://localhost:8080",
+]
+# =====================================================================
 
 
 SIMPLE_JWT = {
